@@ -13,10 +13,35 @@ import (
 	urlpkg "github.com/mutagen-io/mutagen/pkg/url"
 )
 
+// NewSSHTransportFunc defines the SSH transport creation function type.
+type NewSSHTransportFunc func(user, host string, port uint16, prompter string) (agent.Transport, error)
+
+// HandlerOpts configures the SSH protocol handler.
+type HandlerOpts interface {
+	// apply applies the configurations to the protocol handler.
+	apply(*protocolHandler)
+}
+
+type handlerOptsFunc func(*protocolHandler)
+
+func (f handlerOptsFunc) apply(h *protocolHandler) {
+	f(h)
+}
+
+// WithSSHTransportFunc configures the SSH protocol handler to use the specified
+// transport creation function.
+func WithSSHTransportFunc(f NewSSHTransportFunc) HandlerOpts {
+	return handlerOptsFunc(func(h *protocolHandler) {
+		h.newTransportFunc = f
+	})
+}
+
 // protocolHandler implements the synchronization.ProtocolHandler interface for
 // connecting to remote endpoints over SSH. It uses the agent infrastructure
 // over an SSH transport.
-type protocolHandler struct{}
+type protocolHandler struct {
+	newTransportFunc NewSSHTransportFunc
+}
 
 // dialResult provides asynchronous agent dialing results.
 type dialResult struct {
@@ -24,6 +49,19 @@ type dialResult struct {
 	stream io.ReadWriteCloser
 	// error is the error returned by agent dialing.
 	error error
+}
+
+func (h *protocolHandler) newTransport(
+	user, host string,
+	port uint16,
+	prompter string,
+) (agent.Transport, error) {
+	newFunc := h.newTransportFunc
+	if newFunc == nil {
+		newFunc = ssh.NewTransport
+	}
+
+	return newFunc(user, host, port, prompter)
 }
 
 // Connect connects to an SSH endpoint.
@@ -45,7 +83,7 @@ func (h *protocolHandler) Connect(
 	}
 
 	// Create an SSH agent transport.
-	transport, err := ssh.NewTransport(url.User, url.Host, uint16(url.Port), prompter)
+	transport, err := h.newTransport(url.User, url.Host, uint16(url.Port), prompter)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create SSH transport: %w", err)
 	}
@@ -86,6 +124,15 @@ func (h *protocolHandler) Connect(
 }
 
 func init() {
-	// Register the SSH protocol handler with the synchronization package.
-	synchronization.ProtocolHandlers[urlpkg.Protocol_SSH] = &protocolHandler{}
+	Register()
+}
+
+// Register registers the SSH protocol handler with the synchronization package.
+func Register(opts ...HandlerOpts) {
+	handler := &protocolHandler{}
+	for _, opt := range opts {
+		opt.apply(handler)
+	}
+
+	synchronization.ProtocolHandlers[urlpkg.Protocol_SSH] = handler
 }
