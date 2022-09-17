@@ -30,6 +30,12 @@ const (
 	maximumListTransitionProblems = 10
 )
 
+// ManagerOpts configures manager.
+type ManagerOpts interface {
+	// apply applies configurations.
+	apply(*Manager)
+}
+
 // Manager provides synchronization session management facilities. Its methods
 // are safe for concurrent usage, so it can be easily exported via an RPC
 // interface.
@@ -42,20 +48,30 @@ type Manager struct {
 	sessionsLock *state.TrackingLock
 	// sessions maps sessions to their respective controllers.
 	sessions map[string]*controller
+	// sessionDataDir specifies the Mutagen data directory function to use.
+	sessionDataDir filesystem.DataDirFunc
 }
 
 // NewManager creates a new Manager instance.
-func NewManager(logger *logging.Logger) (*Manager, error) {
+func NewManager(logger *logging.Logger, opts ...ManagerOpts) (*Manager, error) {
 	// Create a tracker and corresponding lock to watch for state changes.
 	tracker := state.NewTracker()
-	sessionsLock := state.NewTrackingLock(tracker)
 
-	// Create the session registry.
-	sessions := make(map[string]*controller)
+	manager := &Manager{
+		logger:         logger,
+		tracker:        tracker,
+		sessionsLock:   state.NewTrackingLock(tracker),
+		sessions:       make(map[string]*controller),
+		sessionDataDir: filesystem.Mutagen,
+	}
+
+	for _, opt := range opts {
+		opt.apply(manager)
+	}
 
 	// Load existing sessions.
 	logger.Info("Looking for existing sessions")
-	sessionsDirectory, err := pathForSession("")
+	sessionsDirectory, err := pathForSession(manager.sessionDataDir, "")
 	if err != nil {
 		return nil, fmt.Errorf("unable to compute sessions directory: %w", err)
 	}
@@ -70,22 +86,18 @@ func NewManager(logger *logging.Logger) (*Manager, error) {
 			continue
 		}
 		logger.Info("Loading session", id)
-		if controller, err := loadSession(logger.Sublogger(identifier.Truncated(id)), tracker, id); err != nil {
+		sessionLogger := logger.Sublogger(identifier.Truncated(id))
+		if controller, err := loadSession(sessionLogger, tracker, manager.sessionDataDir, id); err != nil {
 			logger.Warnf("Failed to load session %s: %v", id, err)
 			continue
 		} else {
-			sessions[id] = controller
+			manager.sessions[id] = controller
 		}
 	}
 
 	// Success.
 	logger.Info("Session manager initialized")
-	return &Manager{
-		logger:       logger,
-		tracker:      tracker,
-		sessionsLock: sessionsLock,
-		sessions:     sessions,
-	}, nil
+	return manager, nil
 }
 
 // allControllers creates a list of all controllers managed by the manager.
@@ -223,6 +235,7 @@ func (m *Manager) Create(
 		ctx,
 		m.logger.Sublogger(identifier.Truncated(id)),
 		m.tracker,
+		m.sessionDataDir,
 		id,
 		alpha, beta,
 		configuration, configurationAlpha, configurationBeta,

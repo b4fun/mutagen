@@ -60,6 +60,10 @@ const (
 	MutagenIODirectoryName = "mutagen.io"
 )
 
+// DataDirFunc defines the function type for Mutagen data directory.
+// TODO(hbc): extract a filesystem interface
+type DataDirFunc func(create bool, pathComponents ...string) (string, error)
+
 // Mutagen computes (and optionally creates) subdirectories inside the Mutagen
 // data directory.
 func Mutagen(create bool, pathComponents ...string) (string, error) {

@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/mutagen-io/mutagen/pkg/encoding"
+	"github.com/mutagen-io/mutagen/pkg/filesystem"
 	"github.com/mutagen-io/mutagen/pkg/logging"
 	"github.com/mutagen-io/mutagen/pkg/mutagen"
 	"github.com/mutagen-io/mutagen/pkg/prompting"
@@ -97,6 +98,7 @@ func newSession(
 	ctx context.Context,
 	logger *logging.Logger,
 	tracker *state.Tracker,
+	dataDir filesystem.DataDirFunc,
 	identifier string,
 	alpha, beta *url.URL,
 	configuration, configurationAlpha, configurationBeta *Configuration,
@@ -189,11 +191,11 @@ func newSession(
 	archive := &core.Archive{}
 
 	// Compute the session and archive paths.
-	sessionPath, err := pathForSession(session.Identifier)
+	sessionPath, err := pathForSession(dataDir, session.Identifier)
 	if err != nil {
 		return nil, fmt.Errorf("unable to compute session path: %w", err)
 	}
-	archivePath, err := pathForArchive(session.Identifier)
+	archivePath, err := pathForArchive(dataDir, session.Identifier)
 	if err != nil {
 		return nil, fmt.Errorf("unable to compute archive path: %w", err)
 	}
@@ -242,13 +244,18 @@ func newSession(
 }
 
 // loadSession loads an existing session and creates a corresponding controller.
-func loadSession(logger *logging.Logger, tracker *state.Tracker, identifier string) (*controller, error) {
+func loadSession(
+	logger *logging.Logger,
+	tracker *state.Tracker,
+	dataDir filesystem.DataDirFunc,
+	identifier string,
+) (*controller, error) {
 	// Compute session and archive paths.
-	sessionPath, err := pathForSession(identifier)
+	sessionPath, err := pathForSession(dataDir, identifier)
 	if err != nil {
 		return nil, fmt.Errorf("unable to compute session path: %w", err)
 	}
-	archivePath, err := pathForArchive(identifier)
+	archivePath, err := pathForArchive(dataDir, identifier)
 	if err != nil {
 		return nil, fmt.Errorf("unable to compute archive path: %w", err)
 	}
