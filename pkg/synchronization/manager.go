@@ -36,6 +36,19 @@ type ManagerOpts interface {
 	apply(*Manager)
 }
 
+type manageOptsFunc func(*Manager)
+
+func (f manageOptsFunc) apply(m *Manager) {
+	f(m)
+}
+
+// WithSessionDataDir sets session data dir function to use.
+func WithSessionDataDir(f filesystem.DataDirFunc) ManagerOpts {
+	return manageOptsFunc(func(m *Manager) {
+		m.sessionDataDir = f
+	})
+}
+
 // Manager provides synchronization session management facilities. Its methods
 // are safe for concurrent usage, so it can be easily exported via an RPC
 // interface.
