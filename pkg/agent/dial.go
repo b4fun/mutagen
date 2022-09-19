@@ -213,3 +213,8 @@ func Dial(logger *logging.Logger, transport Transport, mode, prompter string) (i
 	}
 	return stream, nil
 }
+
+// DialFunc defines the gent-based endpoint dial function type.
+type DialFunc func(logger *logging.Logger, transport Transport, mode, prompter string) (io.ReadWriteCloser, error)
+
+var _ DialFunc = Dial

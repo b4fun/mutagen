@@ -36,11 +36,20 @@ func WithSSHTransportFunc(f NewSSHTransportFunc) HandlerOpts {
 	})
 }
 
+// WithAgentDialFunc configures the SSH protocol handler to use the specified
+// agent dial function.
+func WithAgentDialFunc(f agent.DialFunc) HandlerOpts {
+	return handlerOptsFunc(func(h *protocolHandler) {
+		h.dialFunc = f
+	})
+}
+
 // protocolHandler implements the synchronization.ProtocolHandler interface for
 // connecting to remote endpoints over SSH. It uses the agent infrastructure
 // over an SSH transport.
 type protocolHandler struct {
 	newTransportFunc NewSSHTransportFunc
+	dialFunc         agent.DialFunc
 }
 
 // dialResult provides asynchronous agent dialing results.
@@ -62,6 +71,17 @@ func (h *protocolHandler) newTransport(
 	}
 
 	return newFunc(user, host, port, prompter)
+}
+
+func (h *protocolHandler) dialAgent(
+	logger *logging.Logger, transport agent.Transport, mode, prompter string,
+) (io.ReadWriteCloser, error) {
+	dialFunc := h.dialFunc
+	if dialFunc == nil {
+		dialFunc = agent.Dial
+	}
+
+	return dialFunc(logger, transport, mode, prompter)
 }
 
 // Connect connects to an SSH endpoint.
@@ -95,7 +115,7 @@ func (h *protocolHandler) Connect(
 	// cancellation.
 	go func() {
 		// Perform the dialing operation.
-		stream, err := agent.Dial(logger, transport, agent.CommandSynchronizer, prompter)
+		stream, err := h.dialAgent(logger, transport, agent.CommandSynchronizer, prompter)
 
 		// Transmit the result or, if cancelled, close the stream.
 		select {
